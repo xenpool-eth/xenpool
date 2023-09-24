@@ -1,35 +1,18 @@
 import json
 import requests
-import time
 from passlib.hash import argon2
 import hashlib
 from random import choice, randrange
 import string
 import threading
-import re
 
 difficulty = 1
 memory_cost = 1500 
 cores = 1
-account = "0x0A6969ffF003B760c97005e03ff5a9741126167A"
-last_block_url = 'http://xenminer.mooo.com:4445/getblocks/lastblock'
+account = "0x0A6969ffF003B760c97005e03ff5a97411261675" # Set your wallet address
 
 def hash_value(value):
     return hashlib.sha256(value.encode()).hexdigest()
-
-def build_merkle_tree(elements, merkle_tree={}):
-    if len(elements) == 1:
-        return elements[0], merkle_tree
-
-    new_elements = []
-    for i in range(0, len(elements), 2):
-        left = elements[i]
-        right = elements[i + 1] if i + 1 < len(elements) else left
-        combined = left + right
-        new_hash = hash_value(combined)
-        merkle_tree[new_hash] = {'left': left, 'right': right}
-        new_elements.append(new_hash)
-    return build_merkle_tree(new_elements, merkle_tree)
 
 from datetime import datetime
 def is_within_five_minutes_of_hour():
@@ -85,7 +68,7 @@ def fetch_difficulty_from_server():
         return str(response_data['difficulty'])
     except Exception as e:
         print(f"An error occurred while fetching difficulty: {e}")
-        return '2000'  # Default value if fetching fails
+        return memory_cost  # Default value if fetching fails
 
 def generate_random_sha256(max_length=128):
     characters = string.ascii_letters + string.digits + string.punctuation
@@ -97,54 +80,6 @@ def generate_random_sha256(max_length=128):
 
 from tqdm import tqdm
 import time
-
-def submit_pow(account_address, key, hash_to_verify):
-    # Download last block record
-    url = last_block_url
-    response = requests.get(url)
-
-    if response.status_code == 200:
-        records = json.loads(response.text)
-        verified_hashes = []
-
-        for record in records:
-            block_id = record.get('block_id')
-            record_hash_to_verify = record.get('hash_to_verify')
-            record_key = record.get('key')
-            account = record.get('account')
-
-            # Verify each record using Argon2
-            if argon2.verify(record_key, record_hash_to_verify):
-                verified_hashes.append(hash_value(str(block_id) + record_hash_to_verify + record_key + account))
-
-        # If we have any verified hashes, build the Merkle root
-        if verified_hashes:
-            merkle_root, _ = build_merkle_tree(verified_hashes)
-
-            # Calculate block ID for output (using the last record for reference)
-            output_block_id = int(block_id / 100)
-
-            # Prepare payload for PoW
-            payload = {
-                'account_address': account_address,
-                'block_id': output_block_id,
-                'merkle_root': merkle_root,
-                'key': key,
-                'hash_to_verify': hash_to_verify
-            }
-
-            # Send POST request
-            pow_response = requests.post('http://xenminer.mooo.com:4446/send_pow', json=payload)
-
-            if pow_response.status_code == 200:
-                print(f"Proof of Work successful: {pow_response.json()}")
-            else:
-                print(f"Proof of Work failed: {pow_response.json()}")
-
-            print(f"Block ID: {output_block_id}, Merkle Root: {merkle_root}")
-
-    else:
-        print("Failed to fetch the last block.")
 
 # ANSI escape codes
 RED = "\033[31m"
@@ -179,15 +114,11 @@ def mine_block(stored_targets, prev_hash):
 
             for target in stored_targets:
                 if target in hashed_data[-87:]:
-                # Search for the pattern "XUNI" followed by a digit (0-9)
-                    if re.search("XUNI[0-9]", hashed_data) and is_within_five_minutes_of_hour():
+                    if target == "XUNI" and is_within_five_minutes_of_hour():
                         found_valid_hash = True
                         break
-                    elif target == "XEN11":
+                    elif target == "XEN1":
                         found_valid_hash = True
-                        capital_count = sum(1 for char in re.sub('[0-9]', '', hashed_data) if char.isupper())
-                        if capital_count >= 65:
-                            print(f"{RED}Superblock found{RESET}")
                         break
                     else:
                         found_valid_hash = False
@@ -202,7 +133,7 @@ def mine_block(stored_targets, prev_hash):
                 pbar.set_postfix({"Difficulty": f"{YELLOW}{memory_cost}{RESET}"}, refresh=True)
 
             if found_valid_hash:
-                print(f"\n{RED}Found valid hash for target {target} after {attempts} attempts{RESET}")
+                print(f"\n{RED}Found valid low-difficulty hash for target {target} after {attempts} attempts{RESET}")
                 break
 
 
@@ -215,21 +146,17 @@ def mine_block(stored_targets, prev_hash):
         "hashes_per_second": hashes_per_second
         }
 
-    print (payload)
+    print(payload)
 
     max_retries = 2
     retries = 0
 
     while retries <= max_retries:
         # Make the POST request
-        response = requests.post('http://xenminer.mooo.com/verify', json=payload)
+        response = requests.post('http://xenpool.io:4444/verify', json=payload)
 
         # Print the HTTP status code
         print("HTTP Status Code:", response.status_code)
-
-        if target == "XEN11" and found_valid_hash and response.status_code == 200:
-            #submit proof of work validation of last sealed block
-            submit_pow(account, random_data + prev_hash, hashed_data)
 
         if response.status_code != 500:  # If status code is not 500, break the loop
             print("Server Response:", response.json())
@@ -248,18 +175,20 @@ def mine_block(stored_targets, prev_hash):
 
     return random_data, hashed_data, attempts, hashes_per_second
 
+
 def verify_block(block):
     argon2_hasher = argon2.using(time_cost=difficulty, memory_cost=memory_cost, parallelism=cores)
     #debug
-    print ("Key: ");
-    print (block['random_data'] + block['prev_hash'])
-    print ("Hash: ");
-    print (block['valid_hash'])
+    print("Key: ")
+    print(block['random_data'] + block['prev_hash'])
+    print("Hash: ")
+    print(block['valid_hash'])
     return argon2_hasher.verify(block['random_data'] + block['prev_hash'], block['valid_hash'])
+
 
 if __name__ == "__main__":
     blockchain = []
-    stored_targets = ['XEN11', 'XUNI']
+    stored_targets = ['XEN1', 'XUNI']
     num_blocks_to_mine = 20000000
     
     #Start difficulty monitoring thread
@@ -291,7 +220,6 @@ if __name__ == "__main__":
     new_block.to_dict()['hashes_per_second'] = hashes_per_second
     blockchain.append(new_block.to_dict())
     print(f"New Block Added: {new_block.hash}")
-
 
     # Verification
     for i, block in enumerate(blockchain[1:], 1):
