@@ -109,7 +109,7 @@ def mine_block(stored_targets, prev_hash):
                     return
 
             random_data = generate_random_sha256()
-            hashed_data = argon2_hasher.hash(random_data + prev_hash)
+            hashed_data = argon2_hasher.hash(random_data)
 
 
             for target in stored_targets:
@@ -140,7 +140,7 @@ def mine_block(stored_targets, prev_hash):
     # Prepare the payload
     payload = {
         "hash_to_verify": hashed_data,
-        "key": random_data + prev_hash,
+        "key": random_data,
         "account": account,
         "attempts": attempts,
         "hashes_per_second": hashes_per_second
